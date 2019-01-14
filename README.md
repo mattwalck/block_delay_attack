@@ -5,6 +5,12 @@ Bitcoin Core integration/staging tree
 
 https://bitcoincore.org
 
+Fork Description
+----------------
+
+This fork contains the attack code used to perform block delay attack.
+
+
 What is Bitcoin?
 ----------------
 
