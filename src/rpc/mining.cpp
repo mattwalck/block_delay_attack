@@ -29,6 +29,8 @@
 #include <memory>
 #include <stdint.h>
 
+#include <chrono>
+#include <thread>
 unsigned int ParseConfirmTarget(const UniValue& value)
 {
     int target = value.get_int();
@@ -141,7 +143,12 @@ UniValue generateBlocks(std::shared_ptr<CReserveScript> coinbaseScript, int nGen
             throw JSONRPCError(RPC_INTERNAL_ERROR, "ProcessNewBlock, block not accepted");
         ++nHeight;
         blockHashes.push_back(pblock->GetHash().GetHex());
-
+        
+        std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
+        auto duration = now.time_since_epoch();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+        LogPrintf("***NewBlock***%d*** %s\n", millis, pblock->GetHash().ToString());
+        
         //mark script as important because it was used at least for one coinbase output if the script came from the wallet
         if (keepScript)
         {

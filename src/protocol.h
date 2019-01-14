@@ -237,6 +237,10 @@ extern const char *GETBLOCKTXN;
  * @since protocol version 70014 as described by BIP 152
  */
 extern const char *BLOCKTXN;
+/**
+ * Contains coordination messages within attackers.
+ */
+extern const char *ATTMSG;
 };
 
 /* Get a vector of all valid message types (see above) */
