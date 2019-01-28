@@ -29,6 +29,10 @@
 #include <memory>
 #include <condition_variable>
 
+#include <unordered_map>
+#include <unordered_set>
+#include <blockencodings.h>
+
 #ifndef WIN32
 #include <arpa/inet.h>
 #endif
@@ -36,6 +40,7 @@
 
 class CScheduler;
 class CNode;
+class VictimState;
 
 namespace boost {
     class thread_group;
@@ -56,9 +61,9 @@ static const unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 4 * 1000 * 1000;
 /** Maximum length of strSubVer in `version` message */
 static const unsigned int MAX_SUBVERSION_LENGTH = 256;
 /** Maximum number of automatic outgoing nodes */
-static const int MAX_OUTBOUND_CONNECTIONS = 50;
+static const int MAX_OUTBOUND_CONNECTIONS = 8;
 /** Maximum number of addnode outgoing nodes */
-static const int MAX_ADDNODE_CONNECTIONS = 50;
+static const int MAX_ADDNODE_CONNECTIONS = 8;
 /** -listen default */
 static const bool DEFAULT_LISTEN = true;
 /** -upnp default */
@@ -72,7 +77,7 @@ static const size_t MAPASKFOR_MAX_SZ = MAX_INV_SZ;
 /** The maximum number of entries in setAskFor (larger due to getdata latency)*/
 static const size_t SETASKFOR_MAX_SZ = 2 * MAX_INV_SZ;
 /** The maximum number of peer connections to maintain. */
-static const unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 125;
+static const unsigned int DEFAULT_MAX_PEER_CONNECTIONS = 250;
 /** The default for -maxuploadtarget. 0 = Unlimited */
 static const uint64_t DEFAULT_MAX_UPLOAD_TARGET = 0;
 /** The default timeframe for -maxuploadtarget. 1 day. */
@@ -315,6 +320,7 @@ public:
 
     void WakeMessageHandler();
     CNode* FindNode(const CNetAddr& ip);
+    std::unordered_map<std::string, VictimState*> victim_states;
 
 private:
     struct ListenSocket {
@@ -595,6 +601,39 @@ public:
 
     int readHeader(const char *pch, unsigned int nBytes);
     int readData(const char *pch, unsigned int nBytes);
+};
+
+/** Information about attack state on a single victim */
+class VictimState
+{
+public:
+    // victim node
+    CNode* pvictim;
+    /*
+     * attack state for this victim
+     * 0: initial state, send compact blocks
+     * 1: phase 1 succeed, send headers message
+     * 2: myself is in the hbn list, wait for other attack node to get into the list. In state 2, I will not send
+     *    fast compact blocks.
+     */
+    int attack_state = 0;
+    // victim's current HBN list
+    std::set<int> hb_list;
+    // the fast compact blocks already sent to the victim (to avoid sending duplicates)
+    std::unordered_map<std::string, BlockTransactionsRequest*> relayed_compact_blocks;
+    // the fast headers message already sent to the victim (to avoid sending duplicates)
+    std::unordered_map<std::string, int> relayed_fast_headers;
+    // pending getdata request from the victim to respond
+    std::unordered_set<std::string> getdata_request;
+
+    VictimState() {
+        pvictim = NULL;
+    }
+
+    void setNode(CNode* node) {
+        pvictim = node;
+    }
+
 };
 
 

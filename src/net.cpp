@@ -1990,6 +1990,16 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
+        if (pnode->addr.ToString().find("128.2.57.41") == 0) {
+            LogPrintf("victim %s connected.\n", pnode->addr.ToString());
+            // it is possible we already initiate the victim state when we received an attack message from our colleague.
+            if (victim_states.find(pnode->addr.ToString()) == victim_states.end()) {
+                VictimState *pvState = new VictimState();
+                victim_states[pnode->addr.ToString()] = pvState;
+            }
+            victim_states[pnode->addr.ToString()]->setNode(pnode);
+        }
+
     }
 }
 
