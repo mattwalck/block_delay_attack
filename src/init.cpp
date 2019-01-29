@@ -1701,6 +1701,11 @@ bool AppInitMain()
 
     connOptions.nMaxOutboundTimeframe = nMaxOutboundTimeframe;
     connOptions.nMaxOutboundLimit = nMaxOutboundLimit;
+    std::string default_attacker_1 = "10.1.1.55";
+    std::string default_attacker_2 = "10.1.1.56";
+    connOptions.friend1 = gArgs.GetArg("-attacker1", default_attacker_1);
+    connOptions.friend2 = gArgs.GetArg("-attacker2", default_attacker_2);
+    connOptions.victim_ips = gArgs.GetArgs("-victim");
 
     for (const std::string& strBind : gArgs.GetArgs("-bind")) {
         CService addrBind;

