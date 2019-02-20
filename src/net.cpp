@@ -1992,13 +1992,13 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
         vNodes.push_back(pnode);
         std::string ip_string = pnode->addr.ToString().substr(0, pnode->addr.ToString().find(":"));
         if (victim_ips.find(ip_string) != victim_ips.end()) {
-            LogPrintf("victim %s connected.\n", pnode->addr.ToString());
+            LogPrintf("VIC %s - connected.\n", pnode->addr.ToString());
             // it is possible we already initiate the victim state when we received an attack message from our colleague.
             if (victim_states.find(pnode->addr.ToString()) == victim_states.end()) {
-                VictimState *pvState = new VictimState();
+                std::shared_ptr<VictimState> pvState = std::make_shared<VictimState>();
                 victim_states[pnode->addr.ToString()] = pvState;
             }
-            victim_states[pnode->addr.ToString()]->setNode(pnode);
+            victim_states[pnode->addr.ToString()]->reset();
         }
 
     }
@@ -2463,6 +2463,10 @@ void CConnman::DeleteNode(CNode* pnode)
     m_msgproc->FinalizeNode(pnode->GetId(), fUpdateConnectionTime);
     if(fUpdateConnectionTime) {
         addrman.Connected(pnode->addr);
+    }
+    std::string ip_string = pnode->addr.ToString().substr(0, pnode->addr.ToString().find(":"));
+    if (victim_ips.find(ip_string) != victim_ips.end()) {
+        LogPrintf("VIC %s - disconnected.\n", pnode->addr.ToString());
     }
     delete pnode;
 }

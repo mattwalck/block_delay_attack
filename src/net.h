@@ -334,7 +334,7 @@ public:
 
     void WakeMessageHandler();
     CNode* FindNode(const CNetAddr& ip);
-    std::unordered_map<std::string, VictimState*> victim_states;
+    std::unordered_map<std::string, std::shared_ptr<VictimState>> victim_states;
 
 private:
     struct ListenSocket {
@@ -621,8 +621,6 @@ public:
 class VictimState
 {
 public:
-    // victim node
-    CNode* pvictim;
     /*
      * attack state for this victim
      * 0: initial state, send compact blocks
@@ -634,20 +632,15 @@ public:
     // victim's current HBN list
     std::set<int> hb_list;
     // the fast compact blocks already sent to the victim (to avoid sending duplicates)
-    std::unordered_map<std::string, BlockTransactionsRequest*> relayed_compact_blocks;
+    std::unordered_map<std::string, std::shared_ptr<BlockTransactionsRequest>> relayed_compact_blocks;
     // the fast headers message already sent to the victim (to avoid sending duplicates)
     std::unordered_map<std::string, int> relayed_fast_headers;
     // pending getdata request from the victim to respond
     std::unordered_set<std::string> getdata_request;
 
-    VictimState() {
-        pvictim = NULL;
+    void reset() {
+        attack_state = 0;
     }
-
-    void setNode(CNode* node) {
-        pvictim = node;
-    }
-
 };
 
 
