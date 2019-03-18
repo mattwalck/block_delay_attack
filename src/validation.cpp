@@ -447,6 +447,7 @@ std::string FormatStateMessage(const CValidationState &state)
         state.GetRejectCode());
 }
 
+//TODO: might need to have this always return false
 static bool IsCurrentForFeeEstimation()
 {
     AssertLockHeld(cs_main);
@@ -1157,6 +1158,9 @@ CAmount GetBlockSubsidy(int nHeight, const Consensus::Params& consensusParams)
 
 bool IsInitialBlockDownload()
 {
+
+    return false;
+
     // Once this function has returned false, it must remain false.
     static std::atomic<bool> latchToFalse{false};
     // Optimization: pre-test latch before taking the lock.
@@ -2147,6 +2151,7 @@ static void DoWarning(const std::string& strWarning)
     }
 }
 
+//TODO: this might be using more storage too
 /** Check warning conditions and do some notifications on new chain tip set. */
 void static UpdateTip(const CBlockIndex *pindexNew, const CChainParams& chainParams) {
     // New best block
@@ -2159,6 +2164,7 @@ void static UpdateTip(const CBlockIndex *pindexNew, const CChainParams& chainPar
     }
 
     std::vector<std::string> warningMessages;
+
     if (!IsInitialBlockDownload())
     {
         int nUpgraded = 0;
@@ -2546,6 +2552,7 @@ bool CChainState::ActivateBestChainStep(CValidationState& state, const CChainPar
 
     return true;
 }
+
 
 static void NotifyHeaderTip() {
     bool fNotify = false;
@@ -3346,9 +3353,11 @@ static CDiskBlockPos SaveBlockToDisk(const CBlock& block, int nHeight, const CCh
     return blockPos;
 }
 
+//TODO: check and see if we ever actually need to not return true
 /** Store block on disk. If dbp is non-nullptr, the file is known to already reside on disk */
 bool CChainState::AcceptBlock(const std::shared_ptr<const CBlock>& pblock, CValidationState& state, const CChainParams& chainparams, CBlockIndex** ppindex, bool fRequested, const CDiskBlockPos* dbp, bool* fNewBlock)
 {
+    return true;
     const CBlock& block = *pblock;
 
     if (fNewBlock) *fNewBlock = false;
@@ -3461,6 +3470,8 @@ bool ProcessNewBlock(const CChainParams& chainparams, const std::shared_ptr<cons
     return true;
 }
 
+
+//TODO: get rid of this
 bool TestBlockValidity(CValidationState& state, const CChainParams& chainparams, const CBlock& block, CBlockIndex* pindexPrev, bool fCheckPOW, bool fCheckMerkleRoot)
 {
     AssertLockHeld(cs_main);
@@ -4199,6 +4210,7 @@ bool LoadBlockIndex(const CChainParams& chainparams)
     return true;
 }
 
+//TODO: find where this is called and remove it.
 bool CChainState::LoadGenesisBlock(const CChainParams& chainparams)
 {
     LOCK(cs_main);

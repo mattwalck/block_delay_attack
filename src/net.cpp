@@ -1990,10 +1990,15 @@ void CConnman::OpenNetworkConnection(const CAddress& addrConnect, bool fCountFai
     {
         LOCK(cs_vNodes);
         vNodes.push_back(pnode);
+
+        //get ToString ip addr without port number
         std::string ip_string = pnode->addr.ToString().substr(0, pnode->addr.ToString().find(":"));
+
+        //check if ip is in our list of victims
         if (victim_ips.find(ip_string) != victim_ips.end()) {
             LogPrintf("VIC %s - connected.\n", pnode->addr.ToString());
             // it is possible we already initiate the victim state when we received an attack message from our colleague.
+            //?:why aren't we looking for the substring?
             if (victim_states.find(pnode->addr.ToString()) == victim_states.end()) {
                 std::shared_ptr<VictimState> pvState = std::make_shared<VictimState>();
                 victim_states[pnode->addr.ToString()] = pvState;
