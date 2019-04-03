@@ -2510,7 +2510,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 }
             }
         }
-
+	/*
         bool received_new_header = false;
 
         {
@@ -2691,27 +2691,30 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 }
             }
         } // cs_main
+	*/
 
-        if (fProcessBLOCKTXN)
-            return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
+	
+        //if (fProcessBLOCKTXN)
+          //  return ProcessMessage(pfrom, NetMsgType::BLOCKTXN, blockTxnMsg, nTimeReceived, chainparams, connman, interruptMsgProc);
 
-        if (fRevertToHeaderProcessing) {
+        //if (fRevertToHeaderProcessing) {
             // Headers received from HB compact block peers are permitted to be
             // relayed before full validation (see BIP 152), so we don't want to disconnect
             // the peer if the header turns out to be for an invalid block.
             // Note that if a peer tries to build on an invalid chain, that
             // will be detected and the peer will be banned.
-            return ProcessHeadersMessage(pfrom, connman, {cmpctblock.header}, chainparams, /*punish_duplicate_invalid=*/false);
+          //  return ProcessHeadersMessage(pfrom, connman, {cmpctblock.header}, chainparams, /*punish_duplicate_invalid=*/false);
         }
-
-        if (fBlockReconstructed) {
+	
+    
+        //if (fBlockReconstructed) {
             // If we got here, we were able to optimistically reconstruct a
             // block that is in flight from some other peer.
-            {
-                LOCK(cs_main);
-                mapBlockSource.emplace(pblock->GetHash(), std::make_pair(pfrom->GetId(), false));
-            }
-            bool fNewBlock = false;
+          //  {
+            //    LOCK(cs_main);
+              //  mapBlockSource.emplace(pblock->GetHash(), std::make_pair(pfrom->GetId(), false));
+           // }
+            //bool fNewBlock = false;
             // Setting fForceProcessing to true means that we bypass some of
             // our anti-DoS protections in AcceptBlock, which filters
             // unrequested blocks that might be trying to waste our resources
@@ -2721,30 +2724,30 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             // we have a chain with at least nMinimumChainWork), and we ignore
             // compact blocks with less work than our tip, it is safe to treat
             // reconstructed compact blocks as having been requested.
-            ProcessNewBlock(chainparams, pblock, /*fForceProcessing=*/true, &fNewBlock);
-            if (fNewBlock) {
-                pfrom->nLastBlockTime = GetTime();
-                if(pindex->nHeight >= 102) {
-                    now = std::chrono::system_clock::now();
-                    auto duration = now.time_since_epoch();
-                    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+            //ProcessNewBlock(chainparams, pblock, /*fForceProcessing=*/true, &fNewBlock);
+            //if (fNewBlock) {
+              //  pfrom->nLastBlockTime = GetTime();
+                //if(pindex->nHeight >= 102) {
+                  //  now = std::chrono::system_clock::now();
+                    //auto duration = now.time_since_epoch();
+                    //auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
 
-                    LogPrint(BCLog::NET, "%d: ***received a new compact block (headers already known) ****** at height %d from peer %s\n",
-                             millis, pindex->nHeight, pfrom->addr.ToString());
-                }
-            } else {
-                LOCK(cs_main);
-                mapBlockSource.erase(pblock->GetHash());
-            }
-            LOCK(cs_main); // hold cs_main for CBlockIndex::IsValid()
-            if (pindex->IsValid(BLOCK_VALID_TRANSACTIONS)) {
+                    //LogPrint(BCLog::NET, "%d: ***received a new compact block (headers already known) ****** at height %d from peer %s\n",
+                      //       millis, pindex->nHeight, pfrom->addr.ToString());
+              //  }
+           // } else {
+             //   LOCK(cs_main);
+               // mapBlockSource.erase(pblock->GetHash());
+            //}
+            //LOCK(cs_main); // hold cs_main for CBlockIndex::IsValid()
+            //if (pindex->IsValid(BLOCK_VALID_TRANSACTIONS)) {
                 // Clear download state for this block, which is in
                 // process from some other peer.  We do this after calling
                 // ProcessNewBlock so that a malleated cmpctblock announcement
                 // can't be used to interfere with block relay.
-                MarkBlockAsReceived(pblock->GetHash());
-            }
-        }
+              //  MarkBlockAsReceived(pblock->GetHash());
+           // }
+       // }
 
     }
 
@@ -2858,6 +2861,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::HEADERS && !fImporting && !fReindex) // Ignore headers received while importing
     {
+	/*
         std::vector<CBlockHeader> headers;
         std::vector<CBlock> headers_to_victim;
 
@@ -2898,6 +2902,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         // slots.
         bool should_punish = !pfrom->fInbound && !pfrom->m_manual_connection;
         return ProcessHeadersMessage(pfrom, connman, headers, chainparams, should_punish);
+	*/
     }
 
     else if (strCommand == NetMsgType::BLOCK && !fImporting && !fReindex) // Ignore blocks received while importing
