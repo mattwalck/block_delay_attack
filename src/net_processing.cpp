@@ -2463,6 +2463,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::CMPCTBLOCK && !fImporting && !fReindex) // Ignore blocks received while importing
     {
+        LogPrintf("compact block received \n");
         CBlockHeaderAndShortTxIDs cmpctblock;
         vRecv >> cmpctblock;
 

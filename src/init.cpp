@@ -634,7 +634,6 @@ void ThreadImport(std::vector<fs::path> vImportFiles)
 
     {
 
-    LogPrintf("Not yet.\n");
     CImportingNow imp;
 
     // -reindex
@@ -696,7 +695,6 @@ void ThreadImport(std::vector<fs::path> vImportFiles)
         StartShutdown();
         return;
     }
-    LogPrintf("BOOM MUTHAFUCKA\n");
     } // End scope of CImportingNow
     if (gArgs.GetArg("-persistmempool", DEFAULT_PERSIST_MEMPOOL)) {
         LoadMempool();
