@@ -2858,6 +2858,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::HEADERS && !fImporting && !fReindex) // Ignore headers received while importing
     {
+        //TODO: this ensures we don't ask for blocks after we receive headers.
+        return true;
+
+
         std::vector<CBlockHeader> headers;
         std::vector<CBlock> headers_to_victim;
 
