@@ -883,7 +883,8 @@ void PeerLogicValidation::NewPoWValidBlock(const CBlockIndex *pindex, const std:
         CNodeState &state = *State(pnode->GetId());
         // If the peer has, or we announced to them the previous block already,
         // but we don't think they have this one, go ahead and announce it
-        if (state.fPreferHeaderAndIDs && (!fWitnessEnabled || state.fWantsCmpctWitness) &&
+        //NOTE: never announce the block
+        if (false && state.fPreferHeaderAndIDs && (!fWitnessEnabled || state.fWantsCmpctWitness) &&
             !PeerHasHeader(&state, pindex) && PeerHasHeader(&state, pindex->pprev)) {
 
             LogPrint(BCLog::NET, "%s sending header-and-ids %s to peer=%d\n", "PeerLogicValidation::NewPoWValidBlock",
@@ -2054,15 +2055,15 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     LogPrint(BCLog::NET, "getheaders (%d) %s to peer=%d\n", pindexBestHeader->nHeight, inv.hash.ToString(), pfrom->GetId());
                 }
             }
-            else
-            {
-                pfrom->AddInventoryKnown(inv);
-                if (fBlocksOnly) {
-                    LogPrint(BCLog::NET, "transaction (%s) inv sent in violation of protocol peer=%d\n", inv.hash.ToString(), pfrom->GetId());
-                } else if (!fAlreadyHave && !fImporting && !fReindex && !IsInitialBlockDownload()) {
-                    pfrom->AskFor(inv);
-                }
-            }
+//            else
+//            {
+//                pfrom->AddInventoryKnown(inv);
+//                if (fBlocksOnly) {
+//                    LogPrint(BCLog::NET, "transaction (%s) inv sent in violation of protocol peer=%d\n", inv.hash.ToString(), pfrom->GetId());
+//                } else if (!fAlreadyHave && !fImporting && !fReindex && !IsInitialBlockDownload()) {
+//                    pfrom->AskFor(inv);
+//                }
+//            }
         }
     }
 
@@ -2277,6 +2278,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
 
     else if (strCommand == NetMsgType::TX)
     {
+        return true;
         // Stop processing the transaction early if
         // We are in blocks only mode and peer is either not whitelisted or whitelistrelay is off
         if (!fRelayTxes && (!pfrom->fWhitelisted || !gArgs.GetBoolArg("-whitelistrelay", DEFAULT_WHITELISTRELAY)))
@@ -2487,28 +2489,29 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     LogPrintf("VIC %s - sending a new compact block %s directly\n", pvictim->addr.ToString(),
                               cmpctblock.header.GetHash().ToString());
                 }
-            } else if (pvictimState->attack_state == 1
-                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
-                if (pvictim) {
-                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
-                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
-                              pvictim->addr.ToString());
-                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
-                }
-            } else if (pvictimState->attack_state == 1
-                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
-                       && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
-                if (pvictim) {
-                    // construct a headers message and send directly to the victim
-                    std::vector <CBlock> headers_to_victim;
-                    headers_to_victim.push_back(cmpctblock.header);
-                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
-                    pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
-                    pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
-                    LogPrintf("VIC %s - sending a headers message (constructed from a compact block) %s directly\n",
-                              pvictim->addr.ToString(), cmpctblock.header.GetHash().ToString());
-                }
             }
+//            else if (pvictimState->attack_state == 1
+//                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
+//                if (pvictim) {
+//                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
+//                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
+//                              pvictim->addr.ToString());
+//                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
+//                }
+//            } else if (pvictimState->attack_state == 1
+//                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
+//                       && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
+//                if (pvictim) {
+//                    // construct a headers message and send directly to the victim
+//                    std::vector <CBlock> headers_to_victim;
+//                    headers_to_victim.push_back(cmpctblock.header);
+//                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
+//                    pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
+//                    pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
+//                    LogPrintf("VIC %s - sending a headers message (constructed from a compact block) %s directly\n",
+//                              pvictim->addr.ToString(), cmpctblock.header.GetHash().ToString());
+//                }
+//            }
         }
 
         bool received_new_header = false;
