@@ -45,9 +45,8 @@ std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of 
 
 //TODO: this is a sloppy way to do this, but I'm lazy and don't want to rewrite the whole thing for a one off code
 //Static file variables to hold the important bits of incoming messages
-string whatever = "fancyNonsense";
-static std::string& curr_strCommand = &whatever;
-static CDataStream& curr_vRecv = new CDataStream(SER_DISK, PROTOCOL_VERSION);
+static std::string *curr_strCommand = 0;
+static CDataStream *curr_vRecv = 0;
 
 struct IteratorComparator
 {
@@ -1538,8 +1537,8 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         return true;
     }
 
-    curr_strCommand = strCommand;
-    curr_vRecv = vRecv;
+    curr_strCommand = &strCommand;
+    curr_vRecv = &vRecv;
 
     if (!(pfrom->GetLocalServices() & NODE_BLOOM) &&
         (strCommand == NetMsgType::FILTERLOAD ||
