@@ -1117,7 +1117,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
 
                 struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
                 CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
-                connman->PushMessage(pfriend1, msgMaker.Make(curr_strCommand, curr_vRecv));
+                connman->PushMessage(pfriend1, msgMaker.Make(*curr_strCommand, *curr_vRecv));
             }
         }
     }
