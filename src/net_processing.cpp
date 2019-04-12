@@ -1111,6 +1111,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
                 pvictimState->getdata_request.insert(inv.hash.ToString());
 
                 //TODO: send the request
+                LogPrintf("Sending request to friend\n");
                 connman->PushMessage(pfriend1, msgMaker.Make(curr_strCommand, curr_vRecv));
             }
         }
