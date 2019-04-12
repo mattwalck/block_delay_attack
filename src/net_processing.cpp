@@ -1769,9 +1769,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         return true;
     }
 
-    curr_strCommand = &strCommand;
-    curr_vRecv = &vRecv;
-
     if (!(pfrom->GetLocalServices() & NODE_BLOOM) &&
         (strCommand == NetMsgType::FILTERLOAD ||
          strCommand == NetMsgType::FILTERADD))
