@@ -1516,8 +1516,7 @@ bool static ProcessHeadersMessage(CNode *pfrom, CConnman *connman, const std::ve
 
 bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStream& vRecv, int64_t nTimeReceived, const CChainParams& chainparams, CConnman* connman, const std::atomic<bool>& interruptMsgProc)
 {
-    LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId());
-    LogPrintf("We've received %s \n", strCommand);
+    LogPrint(BCLog::NET, "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->GetId()); 
     if (gArgs.IsArgSet("-dropmessagestest") && GetRand(gArgs.GetArg("-dropmessagestest", 0)) == 0)
     {
         LogPrintf("dropmessagestest DROPPING RECV MESSAGE\n");
@@ -2480,8 +2479,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             struct in_addr victim_in_addr = { .s_addr = inet_addr(victim_ip_string.c_str()) };
             CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
 
-            if (pvictimState->attack_state == 0
-                && pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
+            if (pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
                 if (pvictim) {
                     connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
                     pvictimState->relayed_compact_blocks[cmpctblock.header.GetHash().ToString()] = nullptr;
