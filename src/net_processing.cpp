@@ -2331,7 +2331,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         }
 
         pfrom->vRecvGetData.insert(pfrom->vRecvGetData.end(), vInv.begin(), vInv.end());
-        ProcessGetData(pfrom, chainparams.GetConsensus(), connman, interruptMsgProc);
+        ProcessGetData(pfrom, chainparams.GetConsensus(), connman, interruptMsgProc, strCommand, vRecv);
     }
 
 
