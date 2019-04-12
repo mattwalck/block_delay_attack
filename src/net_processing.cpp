@@ -45,8 +45,8 @@ std::atomic<int64_t> nTimeBestReceived(0); // Used only to inform the wallet of 
 
 //TODO: this is a sloppy way to do this, but I'm lazy and don't want to rewrite the whole thing for a one off code
 //Static file variables to hold the important bits of incoming messages
-static std::string& curr_strCommand;
-static CDataStream& curr_vRecv;
+static std::string& curr_strCommand = "";
+static CDataStream& curr_vRecv(SER_DISK, PROTOCOL_VERSION);
 
 struct IteratorComparator
 {
@@ -1096,6 +1096,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
     }
 
     LOCK(cs_main);
+    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
     if (mi != mapBlockIndex.end()) {
         send = BlockRequestAllowed(mi->second, consensusParams);
@@ -1112,11 +1113,14 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
 
                 //TODO: send the request
                 LogPrintf("Sending request to friend\n");
+
+
+                struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
+                CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
                 connman->PushMessage(pfriend1, msgMaker.Make(curr_strCommand, curr_vRecv));
             }
         }
     }
-    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     // disconnect node in case we have reached the outbound limit for serving historical blocks
     // never disconnect whitelisted nodes
     if (send && connman->OutboundTargetReached(true) && ( ((pindexBestHeader != nullptr) && (pindexBestHeader->GetBlockTime() - mi->second->GetBlockTime() > HISTORICAL_BLOCK_AGE)) || inv.type == MSG_FILTERED_BLOCK) && !pfrom->fWhitelisted)
