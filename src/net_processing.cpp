@@ -1220,7 +1220,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
         a_recent_compact_block = most_recent_compact_block;
         fWitnessesPresentInARecentCompactBlock = fWitnessesPresentInMostRecentCompactBlock;
     }
-    
+
     const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     bool need_activate_chain = false;
     {
@@ -2184,7 +2184,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     good_news = 1;
                     // add myself to the hb list
                     pvictimState->hb_list.insert(-1);
-                    pvictimState->attack_state = 1;
+                    pvictimState->attack_state = 2;
                     if (pvictimState->hb_list.size()==3 && pvictimState->attack_state != 1) {
                         pvictimState->attack_state = 1;
                         // now tell other neighbors that we don't want compact blocks
