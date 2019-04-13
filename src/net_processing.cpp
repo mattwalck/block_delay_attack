@@ -1220,7 +1220,8 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
         a_recent_compact_block = most_recent_compact_block;
         fWitnessesPresentInARecentCompactBlock = fWitnessesPresentInMostRecentCompactBlock;
     }
-
+    
+    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     bool need_activate_chain = false;
     {
         LOCK(cs_main);
@@ -1261,7 +1262,6 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
     }
 
     LOCK(cs_main);
-    const CNetMsgMaker msgMaker(pfrom->GetSendVersion());
     BlockMap::iterator mi = mapBlockIndex.find(inv.hash);
     if (mi != mapBlockIndex.end()) {
         send = BlockRequestAllowed(mi->second, consensusParams);
